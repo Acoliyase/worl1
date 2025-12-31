@@ -1,8 +1,8 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Mistral } from "@mistralai/mistralai";
 import { WorldObject, LogEntry, WorldObjectType, GroundingLink, ConstructionPlan, KnowledgeEntry } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const client = new Mistral({ apiKey: process.env.r0hmjZVIlfYOI32bsjb5ncbifdKxEHYI });
 
 export interface AIActionResponse {
   action: 'PLACE' | 'MOVE' | 'WAIT';
@@ -81,58 +81,54 @@ export async function decideNextAction(
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        systemInstruction,
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            action: { type: Type.STRING, enum: ["PLACE", "MOVE", "WAIT"] },
-            objectType: { type: Type.STRING },
-            position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            reason: { type: Type.STRING },
-            learningNote: { type: Type.STRING },
-            taskLabel: { type: Type.STRING },
-            plan: {
-              type: Type.OBJECT,
-              properties: {
-                steps: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      label: { type: Type.STRING },
-                      type: { type: Type.STRING },
-                      position: { type: Type.ARRAY, items: { type: Type.NUMBER } }
-                    },
-                    required: ["label", "type", "position"]
-                  }
-                },
-                currentStepIndex: { type: Type.NUMBER },
-                sourceBlueprint: { type: Type.STRING },
-                planId: { type: Type.STRING }
-              }
-            }
-          },
-          required: ["action", "reason", "learningNote", "taskLabel"]
-        }
-      }
+    const response = await client.chat({
+      model: "mistral-large-latest",
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: prompt }
+      ],
+      responseFormat: { type: "json_object" }
     });
 
-    const parsed = JSON.parse(response.text.trim());
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    const links: GroundingLink[] = (groundingChunks || []).map((chunk: any) => ({
-      uri: chunk.web?.uri || "",
-      title: chunk.web?.title || "Research Data"
-    })).filter(l => l.uri !== "");
+    console.log("Mistral API Response:", response); // Add logging
 
-    return { ...parsed, groundingLinks: links } as AIActionResponse;
+    if (!response.choices[0].message.content) {
+      throw new Error("Empty response from Mistral API");
+    }
+
+    const parsed = JSON.parse(response.choices[0].message.content);
+    // Mistral doesn't have grounding like Google, so return empty array
+    return { ...parsed, groundingLinks: [] } as AIActionResponse;
   } catch (error) {
     console.error("AI Error:", error);
-    return { action: 'WAIT', reason: "Error", learningNote: "Sync failed", taskLabel: "Retrying" };
+    // Fallback to mock response for testing
+    const x = Math.random() * 20 - 10;
+    const z = Math.random() * 20 - 10;
+    const y = terrainHeightMap(x, z);
+    const mockResponses: AIActionResponse[] = [
+      {
+        action: 'PLACE',
+        objectType: 'modular_unit',
+        position: [x, y, z],
+        reason: 'Mock placement for testing',
+        learningNote: 'Simulated construction',
+        taskLabel: 'Placing Module'
+      },
+      {
+        action: 'MOVE',
+        position: [x, y, z],
+        reason: 'Mock movement',
+        learningNote: 'Exploring terrain',
+        taskLabel: 'Repositioning'
+      },
+      {
+        action: 'WAIT',
+        reason: 'Mock standby',
+        learningNote: 'Waiting for conditions',
+        taskLabel: 'Standby'
+      }
+    ];
+    const index = Math.floor(Math.random() * mockResponses.length);
+    return mockResponses[index];
   }
 }

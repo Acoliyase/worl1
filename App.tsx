@@ -58,6 +58,7 @@ function App() {
   };
 
   const runSimulationStep = useCallback(async () => {
+    console.log("runSimulationStep called"); // Debug log
     if (isProcessing) return;
     setIsProcessing(true);
     setState(prev => ({ ...prev, networkStatus: 'syncing' }));
@@ -250,10 +251,9 @@ function App() {
           <button onClick={() => setIsAuto(true)} className={`px-5 py-2 rounded-lg text-[10px] font-bold transition-all ${isAuto ? 'bg-sky-600 text-white shadow-lg' : 'text-slate-500'}`}>AUTO</button>
           <button onClick={() => setIsAuto(false)} className={`px-5 py-2 rounded-lg text-[10px] font-bold transition-all ${!isAuto ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500'}`}>MANUAL</button>
         </div>
-        <button onClick={runSimulationStep} disabled={isProcessing} className="px-10 h-16 bg-white text-slate-950 rounded-2xl font-black uppercase tracking-tighter transition-all shadow-xl disabled:opacity-50">Initiate Synthesis</button>
+        <button onClick={() => { console.log('Initiate Synthesis clicked'); runSimulationStep(); }} disabled={isProcessing} className="px-10 h-16 bg-red-500 text-white rounded-2xl font-black uppercase tracking-tighter transition-all shadow-xl disabled:opacity-50">Initiate Synthesis</button>
       </div>
 
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,_transparent_50%,_rgba(2,6,23,0.9)_100%)] opacity-80" />
     </div>
   );
 }

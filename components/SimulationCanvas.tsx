@@ -39,6 +39,8 @@ const Terrain: React.FC = () => {
 };
 
 const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ objects, avatarPos, avatarTarget, activePlan }) => {
+  console.log("SimulationCanvas rendering"); // Debug log
+
   const ghostObjects = useMemo(() => {
     if (!activePlan) return [];
     return activePlan.steps.slice(activePlan.currentStepIndex + 1);
