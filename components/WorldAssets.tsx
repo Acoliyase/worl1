@@ -1,6 +1,8 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { WorldObjectType } from '../types';
+import * as THREE from 'three';
 
 interface ObjectProps {
   position: [number, number, number];
@@ -8,6 +10,28 @@ interface ObjectProps {
   scale?: [number, number, number];
   variant?: 'real' | 'ghost';
 }
+
+const GhostMaterial: React.FC = () => {
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame(({ clock }) => {
+    if (matRef.current) {
+      matRef.current.opacity = 0.1 + Math.sin(clock.elapsedTime * 3) * 0.05;
+      matRef.current.emissiveIntensity = 0.4 + Math.sin(clock.elapsedTime * 3) * 0.2;
+    }
+  });
+  return (
+    <meshStandardMaterial 
+      ref={matRef}
+      color="#0ea5e9" 
+      transparent 
+      opacity={0.15} 
+      wireframe 
+      emissive="#0ea5e9"
+      emissiveIntensity={0.6}
+      side={THREE.DoubleSide}
+    />
+  );
+};
 
 export const WorldAsset: React.FC<{ type: WorldObjectType } & ObjectProps> = ({ 
   type, 
@@ -17,128 +41,107 @@ export const WorldAsset: React.FC<{ type: WorldObjectType } & ObjectProps> = ({
   variant = 'real' 
 }) => {
   const isGhost = variant === 'ghost';
-  const ghostOpacity = 0.3;
-  const ghostColor = "#60a5fa"; // Sky blue ghost
+  const groupRef = useRef<THREE.Group>(null);
 
-  const renderMaterial = (color: string, metalness = 0.2, roughness = 0.5, emissive?: string) => {
-    if (isGhost) {
-      return (
-        <meshStandardMaterial 
-          color={ghostColor} 
-          transparent 
-          opacity={ghostOpacity} 
-          wireframe 
-          emissive={ghostColor}
-          emissiveIntensity={0.5}
-        />
-      );
+  useFrame(({ clock }) => {
+    if (groupRef.current && !isGhost) {
+      // Subtle hovering for futuristic feel
+      groupRef.current.position.y = position[1] + Math.sin(clock.elapsedTime * 0.5) * 0.05;
     }
+  });
+
+  const renderMaterial = (color: string, metalness = 0.5, roughness = 0.2, emissive?: string) => {
+    if (isGhost) return <GhostMaterial />;
     return (
       <meshStandardMaterial 
         color={color} 
         roughness={roughness} 
         metalness={metalness} 
         emissive={emissive} 
-        emissiveIntensity={emissive ? 0.5 : 0} 
+        emissiveIntensity={emissive ? 0.4 : 0} 
       />
     );
   };
 
-  switch (type) {
-    case 'wall':
-      return (
-        <mesh position={position} rotation={rotation} scale={scale}>
-          <boxGeometry args={[2, 2.5, 0.2]} />
-          {renderMaterial("#d1d5db")}
-        </mesh>
-      );
-    case 'modular_unit':
-      return (
-        <group position={position} rotation={rotation} scale={scale}>
-          <mesh>
-            <boxGeometry args={[2.5, 2.5, 2.5]} />
-            {renderMaterial("#334155", 0.5, 0.1)}
-          </mesh>
-          {!isGhost && (
-            <mesh>
-              <boxGeometry args={[2.3, 2.3, 2.3]} />
-              <meshStandardMaterial color="#1e293b" opacity={0.6} transparent />
+  const model = (() => {
+    switch (type) {
+      case 'data_spire':
+        return (
+          <group position={[0, 3, 0]}>
+            <mesh castShadow>
+              <cylinderGeometry args={[0.5, 0.8, 6, 6]} />
+              {renderMaterial("#0f172a", 0.9, 0.1, "#38bdf8")}
             </mesh>
-          )}
-        </group>
-      );
-    case 'solar_panel':
-      return (
-        <group position={position} rotation={rotation} scale={scale}>
-          <mesh rotation={[-Math.PI / 4, 0, 0]}>
-            <boxGeometry args={[1.5, 0.1, 2]} />
-            {renderMaterial("#1d4ed8", 1, 0, "#1d4ed8")}
+            <mesh position={[0, 3.2, 0]}>
+              <octahedronGeometry args={[0.6]} />
+              {renderMaterial("#38bdf8", 1, 0, "#38bdf8")}
+            </mesh>
+            <mesh position={[0, 0, 0]} rotation={[0, Math.PI/4, 0]}>
+              <boxGeometry args={[1.2, 5.5, 1.2]} />
+              <meshStandardMaterial color="#38bdf8" wireframe transparent opacity={0.1} />
+            </mesh>
+          </group>
+        );
+      case 'life_support_hub':
+        return (
+          <group position={[0, 1.5, 0]}>
+            <mesh castShadow>
+              <sphereGeometry args={[2, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+              {renderMaterial("#1e293b", 0.7, 0.2, "#0ea5e9")}
+            </mesh>
+            <mesh position={[0, 0.5, 0]}>
+              <cylinderGeometry args={[2.1, 2.1, 0.2, 32]} />
+              {renderMaterial("#0ea5e9", 1, 0, "#0ea5e9")}
+            </mesh>
+            <pointLight color="#0ea5e9" intensity={2} distance={5} />
+          </group>
+        );
+      case 'wall':
+        return (
+          <mesh position={[0, 1.25, 0]} castShadow receiveShadow>
+            <boxGeometry args={[2.2, 2.5, 0.3]} />
+            {renderMaterial("#334155", 0.2, 0.8, "#1e293b")}
           </mesh>
-          <mesh position={[0, -0.5, 0]}>
-            <cylinderGeometry args={[0.05, 0.05, 1]} />
-            {renderMaterial("#475569")}
+        );
+      case 'modular_unit':
+        return (
+          <group position={[0, 1.25, 0]}>
+            <mesh castShadow receiveShadow>
+              <boxGeometry args={[2.5, 2.5, 2.5]} />
+              {renderMaterial("#1e293b", 0.8, 0.1, "#0f172a")}
+            </mesh>
+            <mesh position={[0, 0, 1.26]}>
+              <planeGeometry args={[1.8, 1.8]} />
+              {renderMaterial("#38bdf8", 1, 0, "#38bdf8")}
+            </mesh>
+          </group>
+        );
+      case 'solar_panel':
+        return (
+          <group position={[0, 0.5, 0]}>
+            <mesh rotation={[-Math.PI / 6, 0, 0]} position={[0, 0.6, 0]} castShadow>
+              <boxGeometry args={[2, 0.1, 1.5]} />
+              {renderMaterial("#1d4ed8", 1, 0, "#2563eb")}
+            </mesh>
+            <mesh position={[0, 0, 0]}>
+              <cylinderGeometry args={[0.1, 0.15, 1.2]} />
+              {renderMaterial("#475569")}
+            </mesh>
+          </group>
+        );
+      default:
+        return (
+          <mesh position={[0, 0.5, 0]} castShadow>
+            <boxGeometry args={[1, 1, 1]} />
+            {renderMaterial("#6366f1")}
           </mesh>
-        </group>
-      );
-    case 'water_collector':
-      return (
-        <group position={position} rotation={rotation} scale={scale}>
-          <mesh position={[0, 0.5, 0]}>
-            <cylinderGeometry args={[0.6, 0.8, 1, 32]} />
-            {renderMaterial("#0ea5e9", 0.1, 0.1)}
-          </mesh>
-          <mesh position={[0, 1.1, 0]}>
-            <coneGeometry args={[0.8, 0.3, 32]} />
-            {renderMaterial("#cbd5e1", 0.8)}
-          </mesh>
-        </group>
-      );
-    case 'roof':
-      return (
-        <mesh position={[position[0], position[1] + 1.25, position[2]]} rotation={[Math.PI / 4, 0, 0]} scale={scale}>
-          <coneGeometry args={[2, 1.5, 4]} />
-          {renderMaterial("#7c2d12")}
-        </mesh>
-      );
-    case 'crop':
-      return (
-        <group position={position} scale={scale}>
-          <mesh position={[0, 0.2, 0]}>
-            <boxGeometry args={[0.1, 0.4, 0.1]} />
-            {renderMaterial("#22c55e")}
-          </mesh>
-          <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <circleGeometry args={[0.3, 8]} />
-            {renderMaterial("#451a03")}
-          </mesh>
-        </group>
-      );
-    case 'tree':
-      return (
-        <group position={position} scale={scale}>
-          <mesh position={[0, 1.5, 0]}>
-            <cylinderGeometry args={[0.2, 0.2, 3]} />
-            {renderMaterial("#451a03")}
-          </mesh>
-          <mesh position={[0, 3, 0]}>
-            <sphereGeometry args={[1.2]} />
-            {renderMaterial("#15803d")}
-          </mesh>
-        </group>
-      );
-    case 'door':
-      return (
-        <mesh position={position} scale={scale}>
-          <boxGeometry args={[0.8, 1.8, 0.1]} />
-          {renderMaterial("#78350f")}
-        </mesh>
-      );
-    default:
-      return (
-        <mesh position={position} scale={scale}>
-          <boxGeometry args={[1, 1, 1]} />
-          {renderMaterial("hotpink")}
-        </mesh>
-      );
-  }
+        );
+    }
+  })();
+
+  return (
+    <group ref={groupRef} position={position} rotation={rotation} scale={scale}>
+      {model}
+    </group>
+  );
 };

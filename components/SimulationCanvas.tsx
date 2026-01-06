@@ -1,7 +1,7 @@
 
-import React, { useMemo } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Sky, Stars, ContactShadows, Environment } from '@react-three/drei';
+import React, { useMemo, useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Sky, Stars, ContactShadows, Environment, MeshDistortMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { WorldObject, ConstructionPlan } from '../types';
 import { WorldAsset } from './WorldAssets';
@@ -12,35 +12,59 @@ interface SimulationCanvasProps {
   avatarPos: [number, number, number];
   avatarTarget: [number, number, number] | null;
   activePlan?: ConstructionPlan;
+  isScanning?: boolean;
 }
 
-const Terrain: React.FC = () => {
-  const meshRef = React.useRef<THREE.Mesh>(null);
+const Terrain: React.FC<{ isScanning?: boolean, scanOrigin: [number, number, number] }> = ({ isScanning, scanOrigin }) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const pulseRef = useRef<THREE.Mesh>(null);
   
-  // Create a vertex-based terrain that matches getTerrainHeight logic
   const geom = useMemo(() => {
-    const g = new THREE.PlaneGeometry(100, 100, 64, 64);
+    const g = new THREE.PlaneGeometry(120, 120, 80, 80);
     const pos = g.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
-      const z = pos.getY(i); // Y in PlaneGeometry is Z in World
-      const h = Math.sin(x * 0.2) * Math.cos(z * -0.2) * 1.2;
-      pos.setZ(i, h); // Displacement along Z axis of geometry
+      const z = pos.getY(i);
+      const h = Math.sin(x * 0.2) * Math.cos(z * 0.2) * 1.2;
+      pos.setZ(i, h);
     }
     g.computeVertexNormals();
     return g;
   }, []);
 
+  useFrame(({ clock }) => {
+    if (pulseRef.current && isScanning) {
+      const scale = (clock.elapsedTime * 15) % 60;
+      pulseRef.current.scale.set(scale, scale, 1);
+      // Fix: pulseRef.current.material can be an array. We check and cast to access 'opacity'.
+      const material = pulseRef.current.material;
+      if (material && !Array.isArray(material)) {
+        (material as THREE.MeshBasicMaterial).opacity = 1 - (scale / 60);
+      }
+    } else if (pulseRef.current) {
+      pulseRef.current.scale.set(0, 0, 0);
+    }
+  });
+
   return (
-    <mesh ref={meshRef} geometry={geom} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <meshStandardMaterial color="#0f172a" roughness={0.9} metalness={0.1} flatShading />
-    </mesh>
+    <group>
+      <mesh ref={meshRef} geometry={geom} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <meshStandardMaterial color="#020617" roughness={0.8} metalness={0.2} flatShading />
+      </mesh>
+      <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[120, 120]} />
+        <meshBasicMaterial color="#1e293b" wireframe transparent opacity={0.05} />
+      </mesh>
+      {/* Scan Pulse Visual */}
+      <mesh ref={pulseRef} position={[scanOrigin[0], scanOrigin[1] + 0.1, scanOrigin[2]]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.95, 1, 64]} />
+        <meshBasicMaterial color="#0ea5e9" transparent opacity={0.5} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
   );
 };
 
-const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ objects, avatarPos, avatarTarget, activePlan }) => {
-  console.log("SimulationCanvas rendering"); // Debug log
-
+const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ objects, avatarPos, avatarTarget, activePlan, isScanning }) => {
   const ghostObjects = useMemo(() => {
     if (!activePlan) return [];
     return activePlan.steps.slice(activePlan.currentStepIndex + 1);
@@ -48,26 +72,20 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ objects, avatarPos,
 
   return (
     <div className="w-full h-full bg-black">
-      <Canvas camera={{ position: [18, 18, 18], fov: 40 }} shadows>
-        <color attach="background" args={['#020617']} />
+      <Canvas camera={{ position: [20, 20, 20], fov: 35 }} shadows>
+        <color attach="background" args={['#010409']} />
         
-        <ambientLight intensity={0.4} />
-        <pointLight position={[10, 15, 10]} intensity={1.5} color="#00f2ff" />
-        <directionalLight 
-          position={[-10, 20, 10]} 
-          intensity={1} 
-          castShadow 
-          shadow-mapSize={[2048, 2048]}
-        />
-
-        <Sky sunPosition={[100, 20, 100]} />
-        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+        <ambientLight intensity={0.2} />
+        <pointLight position={[15, 20, 15]} intensity={2} color="#00f2ff" castShadow />
+        <spotLight position={[0, 40, 0]} intensity={1} angle={0.5} penumbra={1} color="#38bdf8" />
+        
+        <Sky sunPosition={[100, 10, 100]} turbidity={0.1} rayleigh={0.5} />
+        <Stars radius={150} depth={50} count={7000} factor={4} saturation={0} fade speed={0.5} />
         <Environment preset="night" />
 
-        <Terrain />
-        <gridHelper args={[100, 50, '#1e293b', '#0f172a']} position={[0, -0.05, 0]} />
-
-        {/* Existing Real Objects */}
+        <Terrain isScanning={isScanning} scanOrigin={avatarPos} />
+        
+        {/* Settlement Assets */}
         {objects.map((obj) => (
           <WorldAsset 
             key={obj.id} 
@@ -79,20 +97,20 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ objects, avatarPos,
           />
         ))}
 
-        {/* Planned Ghost Objects */}
+        {/* Predictive Visualization */}
         {ghostObjects.map((step, idx) => (
           <WorldAsset 
             key={`ghost-${idx}`} 
             type={step.type} 
-            position={step.position} 
+            position={[step.position[0], step.position[1], step.position[2]]} 
             variant="ghost"
           />
         ))}
 
-        <Avatar position={avatarPos} targetPosition={avatarTarget} isThinking={activePlan === undefined} />
+        <Avatar position={avatarPos} targetPosition={avatarTarget} isThinking={isScanning} />
 
-        <ContactShadows opacity={0.6} scale={40} blur={2} far={10} />
-        <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
+        <ContactShadows opacity={0.4} scale={50} blur={2.5} far={20} color="#000000" />
+        <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.05} enableDamping />
       </Canvas>
     </div>
   );

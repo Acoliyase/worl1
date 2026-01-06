@@ -1,10 +1,15 @@
 
-export type WorldObjectType = 'wall' | 'roof' | 'door' | 'crop' | 'tree' | 'well' | 'fence' | 'modular_unit' | 'solar_panel' | 'water_collector';
+export type WorldObjectType = 'wall' | 'roof' | 'door' | 'crop' | 'tree' | 'well' | 'fence' | 'modular_unit' | 'solar_panel' | 'water_collector' | 'data_spire' | 'life_support_hub';
+
+export type KnowledgeCategory = 'Infrastructure' | 'Energy' | 'Environment' | 'Architecture' | 'Synthesis';
+
+export type SettlementTier = 'Outpost' | 'Colony' | 'Settlement' | 'Citadel';
 
 export interface PlanStep {
   label: string;
   type: WorldObjectType;
   position: [number, number, number];
+  status: 'pending' | 'active' | 'completed';
 }
 
 export interface WorldObject {
@@ -18,7 +23,7 @@ export interface WorldObject {
 
 export interface LogEntry {
   id: string;
-  type: 'action' | 'learning' | 'error' | 'success';
+  type: 'action' | 'learning' | 'error' | 'success' | 'thinking';
   message: string;
   timestamp: number;
 }
@@ -32,9 +37,11 @@ export interface KnowledgeEntry {
   id: string;
   title: string;
   description: string;
+  category: KnowledgeCategory;
   iteration: number;
   timestamp: number;
   links?: GroundingLink[];
+  isHighlight?: boolean;
 }
 
 export interface ConstructionPlan {
@@ -42,6 +49,7 @@ export interface ConstructionPlan {
   currentStepIndex: number;
   sourceBlueprint?: string;
   planId: string;
+  objective: string;
 }
 
 export interface ProgressionStats {
@@ -49,6 +57,7 @@ export interface ProgressionStats {
   structuresCompleted: number;
   totalBlocks: number;
   unlockedBlueprints: string[];
+  settlementTier: SettlementTier;
 }
 
 export interface SimulationState {
@@ -60,6 +69,7 @@ export interface SimulationState {
   progression: ProgressionStats;
   networkStatus: 'offline' | 'uplink_active' | 'syncing';
   activePlan?: ConstructionPlan;
+  isScanning: boolean;
   ui: {
     showStats: boolean;
     showKnowledge: boolean;

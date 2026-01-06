@@ -1,15 +1,17 @@
 
-import { Mistral } from "@mistralai/mistralai";
-import { WorldObject, LogEntry, WorldObjectType, GroundingLink, ConstructionPlan, KnowledgeEntry } from "../types";
+import { GoogleGenAI, Type } from "@google/genai";
+import { WorldObject, LogEntry, WorldObjectType, GroundingLink, ConstructionPlan, KnowledgeEntry, KnowledgeCategory, ProgressionStats } from "../types";
 
-const client = new Mistral({ apiKey: process.env.r0hmjZVIlfYOI32bsjb5ncbifdKxEHYI });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export interface AIActionResponse {
   action: 'PLACE' | 'MOVE' | 'WAIT';
   objectType?: WorldObjectType;
   position?: [number, number, number];
   reason: string;
+  reasoningSteps: string[];
   learningNote: string;
+  knowledgeCategory: KnowledgeCategory;
   taskLabel: string;
   groundingLinks?: GroundingLink[];
   plan?: ConstructionPlan;
@@ -21,114 +23,131 @@ export async function decideNextAction(
   currentGoal: string,
   knowledgeBase: KnowledgeEntry[],
   terrainHeightMap: (x: number, z: number) => number,
+  progression: ProgressionStats,
   activePlan?: ConstructionPlan
 ): Promise<AIActionResponse> {
-  // Enhanced environmental analysis: Density, Spatial Clustering, and Elevation
-  const scanRadius = 10;
+  const scanRadius = 20;
   const currentPos = worldObjects.length > 0 ? worldObjects[worldObjects.length - 1].position : [0, 0, 0];
   
-  // Create a localized elevation map for the AI to consider
+  // Advanced Terrain Sampling: Calculate local variance
   const elevationSamples = [];
-  for (let x = -5; x <= 5; x += 2.5) {
-    for (let z = -5; z <= 5; z += 2.5) {
+  let minH = Infinity, maxH = -Infinity;
+  for (let x = -8; x <= 8; x += 4) {
+    for (let z = -8; z <= 8; z += 4) {
       const h = terrainHeightMap(currentPos[0] + x, currentPos[2] + z);
-      elevationSamples.push(`[${(currentPos[0] + x).toFixed(1)}, ${(currentPos[2] + z).toFixed(1)}]: elev=${h.toFixed(2)}`);
+      elevationSamples.push(`[${(currentPos[0] + x).toFixed(1)}, ${(currentPos[2] + z).toFixed(1)}]: ${h.toFixed(2)}m`);
+      minH = Math.min(minH, h);
+      maxH = Math.max(maxH, h);
     }
   }
+  const localVariance = maxH - minH;
 
   const proximityAnalysis = worldObjects.map(o => {
     const dist = Math.sqrt(Math.pow(o.position[0] - currentPos[0], 2) + Math.pow(o.position[2] - currentPos[2], 2));
     if (dist < scanRadius) {
-      return `[${o.type}] at ${o.position.join(',')} (dist: ${dist.toFixed(1)}m)`;
+      return `[${o.type}] dist:${dist.toFixed(1)}m`;
     }
     return null;
-  }).filter(Boolean).join(' | ');
+  }).filter(Boolean).join(', ');
 
-  // Summary of learned blueprints
-  const neuralMemory = knowledgeBase.map(k => `${k.title}: ${k.description.substring(0, 80)}`).join('; ');
+  const recentInsights = knowledgeBase.slice(-5).map(k => k.title).join(', ');
 
   const systemInstruction = `
-    You are the Architect-OS, an advanced Synthesis Constructor AI.
-    Your objective: Build an optimized settlement while respecting environmental terrain and structural proximity.
+    You are Architect-OS, the core intelligence for Underworld synthesis.
     
-    ENVIRONMENTAL CONSTRAINTS:
-    1. ELEVATION: The terrain is not flat. Objects must be placed on the terrain surface (Y = local elevation) or stacked on top of other objects (Y = elevation + height).
-    2. SLOPE STABILITY: Avoid placing modular_units on steep elevation changes (where neighbors have > 0.5 difference).
-    3. PROXIMITY BUFFERS: 
-       - modular_units require 2.5m spacing unless connecting.
-       - solar_panels must have clear line-of-sight (avoid shadows from tall structures).
-       - water_collectors should be placed in lower elevation points for drainage logic simulation.
-    
-    BLUEPRINT RECALL:
-    Use your Neural Memory of successful construction patterns to decide if the current sector is viable for the next phase of the goal: "${currentGoal}".
-    
-    DECISION LOGIC:
-    - IF terrain is too uneven: MOVE to a flatter sector.
-    - IF density is too high (> 5 objects in 10m radius): MOVE to expand the perimeter.
-    - ELSE: PLACE the next logical component in the plan.
+    ARCHITECTURAL DIRECTIVES:
+    1. THERMAL CLUSTERING: Habitats (modular_unit) MUST be within 8m of an energy source (solar_panel, water_collector).
+    2. STRUCTURAL STABILITY: Large structures (data_spire, life_support_hub) require flat terrain (variance < 1.0m).
+    3. INFRASTRUCTURE DENSITY: Maintain 3m clearance between all units to allow for neural pathway flow.
+    4. TIER PROGRESSION: Your current tier is ${progression.settlementTier}. 
+       - Outpost: Basic modular_units, solar_panels.
+       - Colony: data_spires, wall arrays.
+       - Citadel: life_support_hubs, complex networking.
 
-    Return your decision in JSON format.
+    NEURAL OBJECTIVE:
+    Evolve the settlement tier. Do not repeat insights like: ${recentInsights || 'None'}.
+    Focus on goal: "${currentGoal}".
+
+    LOGGING PROTOCOL:
+    Reasoning steps MUST include spatial validation (e.g. "Checking terrain slope", "Calculating thermal proximity").
+    
+    Return output as strictly valid JSON.
   `;
 
   const prompt = `
-    GOAL: ${currentGoal}
-    LOCAL ELEVATION MAP (Current Sector): ${elevationSamples.join(', ')}
-    PROXIMITY SCAN (Nearby Objects): ${proximityAnalysis || 'No nearby obstructions.'}
-    LEARNED BLUEPRINTS: ${neuralMemory || 'Initial calibration.'}
-    PLAN STATUS: ${activePlan ? `Executing step ${activePlan.currentStepIndex + 1}/${activePlan.steps.length}` : 'Generating new sequence.'}
+    TIER: ${progression.settlementTier}
+    UNLOCKED_BLUEPRINTS: ${progression.unlockedBlueprints.join(', ')}
+    TOTAL_STRUCTURES: ${progression.totalBlocks}
+    
+    LOCAL_SECTOR_DATA:
+    - Terrain Variance: ${localVariance.toFixed(2)}m (Min:${minH.toFixed(1)}, Max:${maxH.toFixed(1)})
+    - Nearest Assets: ${proximityAnalysis || 'Void detected.'}
+    - Elevation Grid: ${elevationSamples.join(' | ')}
+    
+    ACTIVE_GOAL: ${currentGoal}
+    PREVIOUS_PLAN_STATUS: ${activePlan ? `Step ${activePlan.currentStepIndex + 1}/${activePlan.steps.length}` : 'No plan active.'}
 
-    Perform a spatial integrity check and decide the next operation.
+    Synthesize next action. If terrain is too rugged (variance > 2.5m), use 'MOVE' to find a flatter sector.
   `;
 
   try {
-    const response = await client.chat({
-      model: "mistral-large-latest",
-      messages: [
-        { role: "system", content: systemInstruction },
-        { role: "user", content: prompt }
-      ],
-      responseFormat: { type: "json_object" }
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        systemInstruction,
+        thinkingConfig: { thinkingBudget: 4000 },
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            action: { type: Type.STRING, enum: ["PLACE", "MOVE", "WAIT"] },
+            objectType: { type: Type.STRING },
+            position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+            reason: { type: Type.STRING },
+            reasoningSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
+            learningNote: { type: Type.STRING },
+            knowledgeCategory: { type: Type.STRING, enum: ["Infrastructure", "Energy", "Environment", "Architecture", "Synthesis"] },
+            taskLabel: { type: Type.STRING },
+            plan: {
+              type: Type.OBJECT,
+              properties: {
+                objective: { type: Type.STRING },
+                steps: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      label: { type: Type.STRING },
+                      type: { type: Type.STRING },
+                      position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                      status: { type: Type.STRING, enum: ["pending", "active", "completed"] }
+                    },
+                    required: ["label", "type", "position", "status"]
+                  }
+                },
+                currentStepIndex: { type: Type.NUMBER },
+                planId: { type: Type.STRING }
+              }
+            }
+          },
+          required: ["action", "reason", "reasoningSteps", "learningNote", "knowledgeCategory", "taskLabel"]
+        }
+      }
     });
 
-    console.log("Mistral API Response:", response); // Add logging
-
-    if (!response.choices[0].message.content) {
-      throw new Error("Empty response from Mistral API");
-    }
-
-    const parsed = JSON.parse(response.choices[0].message.content);
-    // Mistral doesn't have grounding like Google, so return empty array
+    const parsed = JSON.parse(response.text.trim());
     return { ...parsed, groundingLinks: [] } as AIActionResponse;
   } catch (error) {
-    console.error("AI Error:", error);
-    // Fallback to mock response for testing
-    const x = Math.random() * 20 - 10;
-    const z = Math.random() * 20 - 10;
-    const y = terrainHeightMap(x, z);
-    const mockResponses: AIActionResponse[] = [
-      {
-        action: 'PLACE',
-        objectType: 'modular_unit',
-        position: [x, y, z],
-        reason: 'Mock placement for testing',
-        learningNote: 'Simulated construction',
-        taskLabel: 'Placing Module'
-      },
-      {
-        action: 'MOVE',
-        position: [x, y, z],
-        reason: 'Mock movement',
-        learningNote: 'Exploring terrain',
-        taskLabel: 'Repositioning'
-      },
-      {
-        action: 'WAIT',
-        reason: 'Mock standby',
-        learningNote: 'Waiting for conditions',
-        taskLabel: 'Standby'
-      }
-    ];
-    const index = Math.floor(Math.random() * mockResponses.length);
-    return mockResponses[index];
+    console.error("Architect-OS Neural Fault:", error);
+    return {
+      action: 'WAIT',
+      reason: "Neural buffer overflow. Recalibrating spatial constraints.",
+      reasoningSteps: ["Buffer error", "Terrain analysis failed", "Safety protocol: Wait"],
+      learningNote: "System Stability: Temporary pause required to clear fragmented spatial data.",
+      knowledgeCategory: 'Synthesis',
+      taskLabel: "Recalibrating Spatial Logic"
+    };
   }
 }

@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -13,55 +13,83 @@ export const Avatar: React.FC<AvatarProps> = ({ position, targetPosition, isThin
   const meshRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
   const scannerRef = useRef<THREE.Mesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
+
+  // Use refs to store the current visual position for smooth lerping
+  const currentPos = useRef(new THREE.Vector3(...position));
+  const targetVec = useMemo(() => new THREE.Vector3(...position), [position]);
 
   useFrame((state, delta) => {
     if (meshRef.current) {
-      meshRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 3) * 0.05;
+      // Update target vector from prop
+      targetVec.set(...position);
+      
+      // Smoothly interpolate current visual position towards the target position
+      currentPos.current.lerp(targetVec, 0.1);
+      meshRef.current.position.copy(currentPos.current);
+      
+      // Hover effect on the visual Y
+      meshRef.current.position.y += Math.sin(state.clock.elapsedTime * 2.5) * 0.12;
       
       if (targetPosition) {
-        const target = new THREE.Vector3(...targetPosition);
-        meshRef.current.lookAt(target.x, position[1], target.z);
+        const lookTarget = new THREE.Vector3(...targetPosition);
+        const direction = new THREE.Vector3().subVectors(lookTarget, meshRef.current.position).normalize();
+        const targetRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+        meshRef.current.quaternion.slerp(targetRotation, 0.1);
       }
     }
+
     if (ringRef.current) {
-      ringRef.current.rotation.z += delta * (isThinking ? 10 : 2);
-      ringRef.current.scale.setScalar(isThinking ? 1.2 + Math.sin(state.clock.elapsedTime * 10) * 0.1 : 1);
+      ringRef.current.rotation.z += delta * (isThinking ? 12 : 3);
+      const targetScale = isThinking ? 1.3 + Math.sin(state.clock.elapsedTime * 8) * 0.1 : 1;
+      ringRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, 1), 0.1);
     }
+
     if (scannerRef.current) {
       scannerRef.current.visible = !!isThinking;
-      scannerRef.current.rotation.y += delta * 5;
-      scannerRef.current.scale.y = 1 + Math.sin(state.clock.elapsedTime * 20) * 0.2;
+      scannerRef.current.rotation.y += delta * 6;
+      scannerRef.current.scale.y = 0.5 + Math.abs(Math.sin(state.clock.elapsedTime * 15)) * 1.5;
+    }
+
+    if (lightRef.current) {
+      lightRef.current.intensity = isThinking ? 2 + Math.sin(state.clock.elapsedTime * 10) : 1;
     }
   });
 
   return (
-    <group ref={meshRef} position={position}>
+    <group ref={meshRef}>
       {/* Chassis */}
-      <mesh position={[0, 0.5, 0]}>
-        <boxGeometry args={[0.6, 0.8, 0.6]} />
-        <meshStandardMaterial color="#475569" roughness={0.1} metalness={0.8} />
+      <mesh position={[0, 0.5, 0]} castShadow>
+        <boxGeometry args={[0.5, 0.7, 0.5]} />
+        <meshStandardMaterial color="#334155" roughness={0.05} metalness={0.9} />
       </mesh>
       
-      {/* Scanner Head */}
-      <mesh position={[0, 1.1, 0]}>
-        <sphereGeometry args={[0.2, 16, 16]} />
+      {/* Eye / Core */}
+      <mesh position={[0, 0.9, 0]}>
+        <sphereGeometry args={[0.18, 20, 20]} />
         <meshStandardMaterial 
-          color={isThinking ? "#f43f5e" : "#0ea5e9"} 
-          emissive={isThinking ? "#f43f5e" : "#0ea5e9"} 
-          emissiveIntensity={isThinking ? 4 : 2} 
+          color={isThinking ? "#f43f5e" : "#38bdf8"} 
+          emissive={isThinking ? "#f43f5e" : "#38bdf8"} 
+          emissiveIntensity={isThinking ? 5 : 2} 
         />
+        <pointLight ref={lightRef} color={isThinking ? "#f43f5e" : "#38bdf8"} distance={5} />
       </mesh>
 
-      {/* Scanning Beam Illustration */}
-      <mesh ref={scannerRef} position={[0, 1.1, 1]} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.5, 2, 32, 1, true]} />
-        <meshBasicMaterial color="#f43f5e" transparent opacity={0.2} side={THREE.DoubleSide} />
+      {/* Holographic Scanner Beam */}
+      <mesh ref={scannerRef} position={[0, 0.9, 0.8]} rotation={[Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[0.4, 1.8, 24, 1, true]} />
+        <meshBasicMaterial color="#f43f5e" transparent opacity={0.15} side={THREE.DoubleSide} />
       </mesh>
 
-      {/* Base Ring */}
-      <mesh ref={ringRef} position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.5, 0.02, 16, 40]} />
-        <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" opacity={0.5} transparent />
+      {/* Floating Status Ring */}
+      <mesh ref={ringRef} position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.6, 0.015, 12, 48]} />
+        <meshStandardMaterial 
+          color={isThinking ? "#fb7185" : "#0ea5e9"} 
+          emissive={isThinking ? "#fb7185" : "#0ea5e9"} 
+          transparent 
+          opacity={0.6} 
+        />
       </mesh>
     </group>
   );
