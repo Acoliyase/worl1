@@ -94,9 +94,12 @@ export async function decideNextAction(
     const response = await fetch(`${PROXY_URL}/api/decide-action`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
-      body: JSON.stringify(requestPayload)
+      body: JSON.stringify(requestPayload),
+      mode: 'cors',
+      credentials: 'omit'
     });
 
     if (!response.ok) {

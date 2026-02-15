@@ -5,7 +5,7 @@ import { KnowledgeGraph } from './components/KnowledgeGraph';
 import { WorldObject, LogEntry, SimulationState, KnowledgeEntry, GroundingLink, ConstructionPlan, KnowledgeCategory, SettlementTier } from './types';
 import { decideNextAction, AIActionResponse } from './services/aiLogic';
 
-const PROXY_URL = "apiland.yusufsamodin67.workers.dev";
+const PROXY_URL = "https://apiland.yusufsamodin67.workers.dev";
 const GOAL_SEQUENCE = [
   "Synthesize Geothermal Energy Core",
   "Deploy Biospheric Life Support Mesh",
