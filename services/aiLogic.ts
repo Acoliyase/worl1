@@ -1,7 +1,10 @@
 
 import { WorldObject, LogEntry, WorldObjectType, GroundingLink, ConstructionPlan, KnowledgeEntry, KnowledgeCategory, ProgressionStats } from "../types";
 
-const PROXY_URL = "https://apiland.yusufsamodin67.workers.dev";
+const API_ENDPOINTS = [
+  "https://apiland.yusufsamodin67.workers.dev",
+  "https://holy-base-3924.yusufsamodin67.workers.dev"
+];
 
 export interface AIActionResponse {
   action: 'PLACE' | 'MOVE' | 'WAIT';
@@ -83,40 +86,52 @@ export async function decideNextAction(
     Generate a synthesis action. Use Directive DATA_SYNTH_${(knowledgeBase.length % 16).toString().padStart(2, '0')} logic if applicable.
   `;
 
-  try {
-    const requestPayload = {
-      systemInstruction,
-      prompt,
-      currentGoal,
-      progression
-    };
+  const requestPayload = {
+    systemInstruction,
+    prompt,
+    currentGoal,
+    progression
+  };
 
-    const response = await fetch(`${PROXY_URL}/api/decide-action`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(requestPayload),
-      mode: 'cors',
-      credentials: 'omit'
-    });
+  // Try each API endpoint with fallback
+  for (let i = 0; i < API_ENDPOINTS.length; i++) {
+    try {
+      const endpoint = API_ENDPOINTS[i];
+      console.log(`Attempting API call to endpoint ${i + 1}: ${endpoint}`);
+      
+      const response = await fetch(`${endpoint}/api/decide-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(requestPayload),
+        mode: 'cors',
+        credentials: 'omit'
+      });
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log(`Successfully reached endpoint ${i + 1}: ${endpoint}`);
+      return data as AIActionResponse;
+    } catch (error) {
+      console.error(`Endpoint ${i + 1} failed:`, error);
+      if (i === API_ENDPOINTS.length - 1) {
+        // All endpoints failed
+        console.error("All neural endpoints unreachable");
+        return {
+          action: 'WAIT',
+          reason: "Neural link disruption. Re-syncing with the core architecture protocols.",
+          reasoningSteps: ["Checking uplink", "Retrying neural handshake", "Buffer dump"],
+          learningNote: "Uplink Error: System waiting for API connectivity re-establishment.",
+          knowledgeCategory: 'Synthesis',
+          taskLabel: "API Re-Syncing"
+        };
+      }
+      // Try next endpoint
     }
-
-    const data = await response.json();
-    return data as AIActionResponse;
-  } catch (error) {
-    console.error("Neural handshaking failed:", error);
-    return {
-      action: 'WAIT',
-      reason: "Neural link disruption. Re-syncing with the core architecture protocols.",
-      reasoningSteps: ["Checking uplink", "Retrying neural handshake", "Buffer dump"],
-      learningNote: "Uplink Error: System waiting for API connectivity re-establishment.",
-      knowledgeCategory: 'Synthesis',
-      taskLabel: "API Re-Syncing"
-    };
   }
 }
