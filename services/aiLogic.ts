@@ -1,12 +1,7 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { WorldObject, LogEntry, WorldObjectType, GroundingLink, ConstructionPlan, KnowledgeEntry, KnowledgeCategory, ProgressionStats } from "../types";
 
-// Always use the required initialization format: const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
-// Removed custom baseUrl to comply with SDK guidelines.
-const ai = new GoogleGenAI({ 
-  apiKey: process.env.API_KEY
-});
+const PROXY_URL = "https://apiland.yusufsamodin67.workers.dev";
 
 export interface AIActionResponse {
   action: 'PLACE' | 'MOVE' | 'WAIT';
@@ -89,53 +84,27 @@ export async function decideNextAction(
   `;
 
   try {
-    // Correct usage of generateContent with model name and configuration as per guidelines.
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        systemInstruction,
-        thinkingConfig: { thinkingBudget: 4000 },
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            action: { type: Type.STRING, enum: ["PLACE", "MOVE", "WAIT"] },
-            objectType: { type: Type.STRING },
-            position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-            reason: { type: Type.STRING },
-            reasoningSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
-            learningNote: { type: Type.STRING },
-            knowledgeCategory: { type: Type.STRING, enum: ["Infrastructure", "Energy", "Environment", "Architecture", "Synthesis"] },
-            taskLabel: { type: Type.STRING },
-            plan: {
-              type: Type.OBJECT,
-              properties: {
-                objective: { type: Type.STRING },
-                steps: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      label: { type: Type.STRING },
-                      type: { type: Type.STRING },
-                      position: { type: Type.ARRAY, items: { type: Type.NUMBER } },
-                      status: { type: Type.STRING, enum: ["pending", "active", "completed"] }
-                    },
-                    required: ["label", "type", "position", "status"]
-                  }
-                },
-                currentStepIndex: { type: Type.NUMBER },
-                planId: { type: Type.STRING }
-              }
-            }
-          },
-          required: ["action", "reason", "reasoningSteps", "learningNote", "knowledgeCategory", "taskLabel"]
-        }
-      }
+    const requestPayload = {
+      systemInstruction,
+      prompt,
+      currentGoal,
+      progression
+    };
+
+    const response = await fetch(`${PROXY_URL}/api/decide-action`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestPayload)
     });
 
-    return JSON.parse(response.text.trim()) as AIActionResponse;
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data as AIActionResponse;
   } catch (error) {
     console.error("Neural handshaking failed:", error);
     return {
